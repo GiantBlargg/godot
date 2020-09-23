@@ -1005,11 +1005,11 @@ void Window::popup_centered(const Size2i &p_minsize) {
 
 	Rect2i popup_rect;
 	if (p_minsize == Size2i()) {
-		popup_rect.size = _get_contents_minimum_size();
+		popup_rect.size = size;
 	} else {
 		popup_rect.size = p_minsize;
 	}
-	popup_rect.position = (parent_rect.size - popup_rect.size) / 2;
+	popup_rect.position = (parent_rect.size - popup_rect.size) / 2 + parent_rect.position;
 
 	popup(popup_rect);
 }
@@ -1031,7 +1031,7 @@ void Window::popup_centered_ratio(float p_ratio) {
 
 	Rect2i popup_rect;
 	popup_rect.size = parent_rect.size * p_ratio;
-	popup_rect.position = (parent_rect.size - popup_rect.size) / 2;
+	popup_rect.position = (parent_rect.size - popup_rect.size) / 2 + parent_rect.position;
 
 	popup(popup_rect);
 }
