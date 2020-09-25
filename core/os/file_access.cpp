@@ -36,6 +36,8 @@
 #include "core/os/os.h"
 #include "core/project_settings.h"
 
+#include "modules/lr2/lr2_dir.h"
+
 FileAccess::CreateFunc FileAccess::create_func[ACCESS_MAX] = { nullptr, nullptr };
 
 FileAccess::FileCloseFailNotify FileAccess::close_fail_notify = nullptr;
@@ -146,6 +148,14 @@ String FileAccess::fix_path(const String &p_path) const {
 
 		} break;
 		case ACCESS_FILESYSTEM: {
+			if (r_path.begins_with("lr2://")) {
+				if(LR2Dir::get_singleton()) {
+					auto lr2_path = LR2Dir::get_singleton()->resolve_path(r_path.substr(6, r_path.length()));
+					if (lr2_path != "") {
+						return lr2_path;
+					}
+				}
+			}
 			return r_path;
 		} break;
 		case ACCESS_MAX:
