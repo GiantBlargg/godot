@@ -899,6 +899,12 @@ String ResourceLoader::_path_remap(const String &p_path, bool *r_translation_rem
 		new_path = path_remaps[new_path];
 	}
 
+	if(	new_path.begins_with("lr2://") && 
+		new_path.get_extension().to_lower() == "tga" && 
+		!FileAccess::exists(new_path) && 
+		FileAccess::exists(new_path.get_basename() + ".mip"))
+			new_path = new_path.get_basename() + ".mip";
+
 	if (new_path == p_path) { // Did not remap.
 		// Try file remap.
 		Error err;
