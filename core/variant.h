@@ -381,7 +381,6 @@ public:
 		OP_NEGATE,
 		OP_POSITIVE,
 		OP_MODULE,
-		OP_STRING_CONCAT,
 		//bitwise
 		OP_SHIFT_LEFT,
 		OP_SHIFT_RIGHT,
@@ -409,10 +408,57 @@ public:
 		return res;
 	}
 
+	Variant::Type get_operator_return_type(Operator p_operator, Type p_type_a, Type p_type_b);
+	typedef void (*ValidatedOperatorEvaluator)(const Variant *left, const Variant *right, Variant *r_ret);
+	static ValidatedOperatorEvaluator get_validated_operator_evaluator(Operator p_operator, Type p_type_a, Type p_type_b);
+#ifdef PTRCALL_ENABLED
+	typedef void (*PTROperatorEvaluator)(const void *left, const void *right, void *r_ret);
+	static PTROperatorEvaluator get_ptr_operator_evaluator(Operator p_operator, Type p_type_a, Type p_type_b);
+#endif
+
 	void zero();
 	Variant duplicate(bool deep = false) const;
 	static void blend(const Variant &a, const Variant &b, float c, Variant &r_dst);
 	static void interpolate(const Variant &a, const Variant &b, float c, Variant &r_dst);
+
+	class InternalMethod {
+#ifdef DEBUG_ENABLED
+	protected:
+		StringName method_name;
+		Variant::Type base_type;
+#endif
+	public:
+		enum Flags {
+			FLAG_IS_CONST = 1,
+			FLAG_RETURNS_VARIANT = 2,
+			FLAG_NO_PTRCALL = 4,
+			FLAG_VARARGS = 8
+		};
+
+		virtual int get_argument_count() const = 0;
+		virtual Type get_argument_type(int p_arg) const = 0;
+		virtual Type get_return_type() const = 0;
+		virtual uint32_t get_flags() const = 0;
+
+#ifdef DEBUG_ENABLED
+		virtual String get_argument_name(int p_arg) const = 0;
+		StringName get_name() const {
+			return method_name;
+		}
+		Variant::Type get_base_type() const {
+			return base_type;
+		}
+#endif
+		virtual Vector<Variant> get_default_arguments() const = 0;
+		virtual void call(Variant *base, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error) = 0;
+		virtual void validated_call(Variant *base, const Variant **p_args, Variant *r_ret) = 0;
+#ifdef PTRCALL_ENABLED
+		virtual void ptrcall(void *p_base, const void **p_args, void *r_ret) = 0;
+#endif
+		virtual ~InternalMethod() {}
+	};
+
+	static InternalMethod *get_internal_method(Type p_type, const StringName &p_method_name);
 
 	void call_ptr(const StringName &p_method, const Variant **p_args, int p_argcount, Variant *r_ret, Callable::CallError &r_error);
 	Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error);

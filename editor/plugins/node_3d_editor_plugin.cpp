@@ -351,8 +351,8 @@ void Node3DEditorViewport::_update_camera(float p_interp_delta) {
 
 		update_transform_gizmo_view();
 		rotation_control->update();
+		spatial_editor->update_grid();
 	}
-	spatial_editor->update_grid();
 }
 
 Transform Node3DEditorViewport::to_camera_transform(const Cursor &p_cursor) const {
@@ -2405,18 +2405,18 @@ void Node3DEditorViewport::_notification(int p_what) {
 			}
 
 			Transform t = sp->get_global_gizmo_transform();
+			VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(sp);
+			AABB new_aabb = vi ? vi->get_aabb() : _calculate_spatial_bounds(sp);
 
 			exist = true;
-			if (se->last_xform == t && !se->last_xform_dirty) {
+			if (se->last_xform == t && se->aabb == new_aabb && !se->last_xform_dirty) {
 				continue;
 			}
 			changed = true;
 			se->last_xform_dirty = false;
 			se->last_xform = t;
 
-			VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(sp);
-
-			se->aabb = vi ? vi->get_aabb() : _calculate_spatial_bounds(sp);
+			se->aabb = new_aabb;
 
 			t.translate(se->aabb.position);
 
@@ -2464,12 +2464,14 @@ void Node3DEditorViewport::_notification(int p_what) {
 			subviewport_container->set_stretch_shrink(shrink ? 2 : 1);
 		}
 
-		//update msaa if changed
+		// Update MSAA, screen-space AA and debanding if changed
 
-		int msaa_mode = ProjectSettings::get_singleton()->get("rendering/quality/screen_filters/msaa");
+		const int msaa_mode = ProjectSettings::get_singleton()->get("rendering/quality/screen_filters/msaa");
 		viewport->set_msaa(Viewport::MSAA(msaa_mode));
-		int ssaa_mode = GLOBAL_GET("rendering/quality/screen_filters/screen_space_aa");
+		const int ssaa_mode = GLOBAL_GET("rendering/quality/screen_filters/screen_space_aa");
 		viewport->set_screen_space_aa(Viewport::ScreenSpaceAA(ssaa_mode));
+		const bool use_debanding = GLOBAL_GET("rendering/quality/screen_filters/use_debanding");
+		viewport->set_use_debanding(use_debanding);
 
 		bool show_info = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_INFORMATION));
 		if (show_info != info_label->is_visible()) {
@@ -4685,7 +4687,7 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 			}
 			int state = EditorNode3DGizmoPlugin::VISIBLE;
 			for (int i = 0; i < keys.size(); i++) {
-				if (gizmo_plugins_by_name.write[j]->get_name() == keys[i]) {
+				if (gizmo_plugins_by_name.write[j]->get_name() == String(keys[i])) {
 					state = gizmos_status[keys[i]];
 					break;
 				}
@@ -6092,6 +6094,7 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<VehicleWheel3DGizmoPlugin>(memnew(VehicleWheel3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<VisibilityNotifier3DGizmoPlugin>(memnew(VisibilityNotifier3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<GPUParticles3DGizmoPlugin>(memnew(GPUParticles3DGizmoPlugin)));
+	add_gizmo_plugin(Ref<GPUParticlesCollision3DGizmoPlugin>(memnew(GPUParticlesCollision3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<CPUParticles3DGizmoPlugin>(memnew(CPUParticles3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<ReflectionProbeGizmoPlugin>(memnew(ReflectionProbeGizmoPlugin)));
 	add_gizmo_plugin(Ref<DecalGizmoPlugin>(memnew(DecalGizmoPlugin)));
@@ -6724,7 +6727,6 @@ void EditorNode3DGizmoPlugin::create_handle_material(const String &p_name, bool 
 	handle_material->set_point_size(handle_t->get_width());
 	handle_material->set_texture(StandardMaterial3D::TEXTURE_ALBEDO, handle_t);
 	handle_material->set_albedo(Color(1, 1, 1));
-	handle_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
 	handle_material->set_flag(StandardMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 	handle_material->set_flag(StandardMaterial3D::FLAG_SRGB_VERTEX_COLOR, true);
 	handle_material->set_on_top_of_alpha();
@@ -6732,6 +6734,7 @@ void EditorNode3DGizmoPlugin::create_handle_material(const String &p_name, bool 
 		handle_material->set_billboard_mode(StandardMaterial3D::BILLBOARD_ENABLED);
 		handle_material->set_on_top_of_alpha();
 	}
+	handle_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
 
 	materials[p_name] = Vector<Ref<StandardMaterial3D>>();
 	materials[p_name].push_back(handle_material);

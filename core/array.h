@@ -61,6 +61,7 @@ public:
 	void clear();
 
 	bool operator==(const Array &p_array) const;
+	bool operator!=(const Array &p_array) const;
 
 	uint32_t hash() const;
 	void operator=(const Array &p_array);
@@ -75,12 +76,12 @@ public:
 	Variant front() const;
 	Variant back() const;
 
-	Array &sort();
-	Array &sort_custom(Object *p_obj, const StringName &p_function);
+	void sort();
+	void sort_custom(Object *p_obj, const StringName &p_function);
 	void shuffle();
 	int bsearch(const Variant &p_value, bool p_before = true);
 	int bsearch_custom(const Variant &p_value, Object *p_obj, const StringName &p_function, bool p_before = true);
-	Array &invert();
+	void invert();
 
 	int find(const Variant &p_value, int p_from = 0) const;
 	int rfind(const Variant &p_value, int p_from = -1) const;
@@ -97,6 +98,11 @@ public:
 	Array duplicate(bool p_deep = false) const;
 
 	Array slice(int p_begin, int p_end, int p_step = 1, bool p_deep = false) const;
+
+	bool operator<(const Array &p_array) const;
+	bool operator<=(const Array &p_array) const;
+	bool operator>(const Array &p_array) const;
+	bool operator>=(const Array &p_array) const;
 
 	Variant min() const;
 	Variant max() const;

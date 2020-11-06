@@ -30,8 +30,8 @@
 
 #include "global_constants.h"
 
+#include "core/class_db.h"
 #include "core/input/input_event.h"
-#include "core/object.h"
 #include "core/os/keyboard.h"
 #include "core/variant.h"
 
@@ -638,7 +638,6 @@ void register_global_constants() {
 	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_NEGATE", Variant::OP_NEGATE);
 	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_POSITIVE", Variant::OP_POSITIVE);
 	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_MODULE", Variant::OP_MODULE);
-	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_STRING_CONCAT", Variant::OP_STRING_CONCAT);
 	//bitwise
 	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_SHIFT_LEFT", Variant::OP_SHIFT_LEFT);
 	BIND_GLOBAL_ENUM_CONSTANT_CUSTOM("OP_SHIFT_RIGHT", Variant::OP_SHIFT_RIGHT);

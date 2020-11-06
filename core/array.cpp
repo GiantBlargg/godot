@@ -31,8 +31,8 @@
 #include "array.h"
 
 #include "container_type_validate.h"
+#include "core/class_db.h"
 #include "core/hashfuncs.h"
-#include "core/object.h"
 #include "core/script_language.h"
 #include "core/variant.h"
 #include "core/vector.h"
@@ -96,6 +96,37 @@ void Array::clear() {
 
 bool Array::operator==(const Array &p_array) const {
 	return _p == p_array._p;
+}
+
+bool Array::operator!=(const Array &p_array) const {
+	return !operator==(p_array);
+}
+
+bool Array::operator<(const Array &p_array) const {
+	int a_len = size();
+	int b_len = p_array.size();
+
+	int min_cmp = MIN(a_len, b_len);
+
+	for (int i = 0; i < min_cmp; i++) {
+		if (operator[](i) < p_array[i]) {
+			return true;
+		} else if (p_array[i] < operator[](i)) {
+			return false;
+		}
+	}
+
+	return a_len < b_len;
+}
+
+bool Array::operator<=(const Array &p_array) const {
+	return !operator>(p_array);
+}
+bool Array::operator>(const Array &p_array) const {
+	return p_array < *this;
+}
+bool Array::operator>=(const Array &p_array) const {
+	return !operator<(p_array);
 }
 
 uint32_t Array::hash() const {
@@ -330,9 +361,8 @@ struct _ArrayVariantSort {
 	}
 };
 
-Array &Array::sort() {
+void Array::sort() {
 	_p->array.sort_custom<_ArrayVariantSort>();
-	return *this;
 }
 
 struct _ArrayVariantSortCustom {
@@ -349,14 +379,13 @@ struct _ArrayVariantSortCustom {
 		return res;
 	}
 };
-Array &Array::sort_custom(Object *p_obj, const StringName &p_function) {
-	ERR_FAIL_NULL_V(p_obj, *this);
+void Array::sort_custom(Object *p_obj, const StringName &p_function) {
+	ERR_FAIL_NULL(p_obj);
 
 	SortArray<Variant, _ArrayVariantSortCustom, true> avs;
 	avs.compare.obj = p_obj;
 	avs.compare.func = p_function;
 	avs.sort(_p->array.ptrw(), _p->array.size());
-	return *this;
 }
 
 void Array::shuffle() {
@@ -415,9 +444,8 @@ int Array::bsearch_custom(const Variant &p_value, Object *p_obj, const StringNam
 	return bisect(_p->array, p_value, p_before, less);
 }
 
-Array &Array::invert() {
+void Array::invert() {
 	_p->array.invert();
-	return *this;
 }
 
 void Array::push_front(const Variant &p_value) {
