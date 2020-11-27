@@ -30,7 +30,7 @@
 
 #include "rendering_server.h"
 
-#include "core/project_settings.h"
+#include "core/config/project_settings.h"
 
 RenderingServer *RenderingServer::singleton = nullptr;
 RenderingServer *(*RenderingServer::create_func)() = nullptr;
@@ -1431,7 +1431,6 @@ Array RenderingServer::mesh_create_arrays_from_surface_data(const SurfaceData &p
 }
 #if 0
 Array RenderingServer::_mesh_surface_get_skeleton_aabb_bind(RID p_mesh, int p_surface) const {
-
 	Vector<AABB> vec = RS::get_singleton()->mesh_surface_get_skeleton_aabb(p_mesh, p_surface);
 	Array arr;
 	for (int i = 0; i < vec.size(); i++) {
@@ -1859,7 +1858,6 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_create"), &RenderingServer::canvas_occluder_polygon_create);
 	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_set_shape", "occluder_polygon", "shape", "closed"), &RenderingServer::canvas_occluder_polygon_set_shape);
-	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_set_shape_as_lines", "occluder_polygon", "shape"), &RenderingServer::canvas_occluder_polygon_set_shape_as_lines);
 	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_set_cull_mode", "occluder_polygon", "mode"), &RenderingServer::canvas_occluder_polygon_set_cull_mode);
 
 	ClassDB::bind_method(D_METHOD("global_variable_add", "name", "type", "default_value"), &RenderingServer::global_variable_add);

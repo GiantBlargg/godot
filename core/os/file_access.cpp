@@ -30,11 +30,11 @@
 
 #include "file_access.h"
 
+#include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/marshalls.h"
 #include "core/os/os.h"
-#include "core/project_settings.h"
 
 #include "modules/lr2/lr2_dir.h"
 
@@ -53,7 +53,7 @@ FileAccess *FileAccess::create(AccessType p_access) {
 }
 
 bool FileAccess::exists(const String &p_name) {
-	if (PackedData::get_singleton() && PackedData::get_singleton()->has_path(p_name)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_name)) {
 		return true;
 	}
 
@@ -264,8 +264,8 @@ class CharBuffer {
 	Vector<char> vector;
 	char stack_buffer[256];
 
-	char *buffer;
-	int capacity;
+	char *buffer = nullptr;
+	int capacity = 0;
 	int written = 0;
 
 	bool grow() {
@@ -466,7 +466,7 @@ void FileAccess::store_double(double p_dest) {
 }
 
 uint64_t FileAccess::get_modified_time(const String &p_file) {
-	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_file)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
 		return 0;
 	}
 
@@ -479,7 +479,7 @@ uint64_t FileAccess::get_modified_time(const String &p_file) {
 }
 
 uint32_t FileAccess::get_unix_permissions(const String &p_file) {
-	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && PackedData::get_singleton()->has_path(p_file)) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
 		return 0;
 	}
 
@@ -492,6 +492,10 @@ uint32_t FileAccess::get_unix_permissions(const String &p_file) {
 }
 
 Error FileAccess::set_unix_permissions(const String &p_file, uint32_t p_permissions) {
+	if (PackedData::get_singleton() && !PackedData::get_singleton()->is_disabled() && (PackedData::get_singleton()->has_path(p_file) || PackedData::get_singleton()->has_directory(p_file))) {
+		return ERR_UNAVAILABLE;
+	}
+
 	FileAccess *fa = create_for_path(p_file);
 	ERR_FAIL_COND_V_MSG(!fa, ERR_CANT_CREATE, "Cannot create FileAccess for path '" + p_file + "'.");
 

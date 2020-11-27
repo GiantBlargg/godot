@@ -31,10 +31,11 @@
 #ifndef RASTERIZER_STORAGE_RD_H
 #define RASTERIZER_STORAGE_RD_H
 
-#include "core/rid_owner.h"
+#include "core/templates/rid_owner.h"
 #include "servers/rendering/rasterizer.h"
 #include "servers/rendering/rasterizer_rd/rasterizer_effects_rd.h"
 #include "servers/rendering/rasterizer_rd/shader_compiler_rd.h"
+#include "servers/rendering/rasterizer_rd/shaders/canvas_sdf.glsl.gen.h"
 #include "servers/rendering/rasterizer_rd/shaders/giprobe_sdf.glsl.gen.h"
 #include "servers/rendering/rasterizer_rd/shaders/particles.glsl.gen.h"
 #include "servers/rendering/rasterizer_rd/shaders/particles_copy.glsl.gen.h"
@@ -155,6 +156,7 @@ public:
 		DEFAULT_RD_TEXTURE_MULTIMESH_BUFFER,
 		DEFAULT_RD_TEXTURE_CUBEMAP_BLACK,
 		DEFAULT_RD_TEXTURE_CUBEMAP_ARRAY_BLACK,
+		DEFAULT_RD_TEXTURE_CUBEMAP_WHITE,
 		DEFAULT_RD_TEXTURE_3D_WHITE,
 		DEFAULT_RD_TEXTURE_2D_ARRAY_WHITE,
 		DEFAULT_RD_TEXTURE_2D_UINT,
@@ -1002,6 +1004,15 @@ private:
 		RID framebuffer_uniform_set;
 		RID backbuffer_uniform_set;
 
+		RID sdf_buffer_write;
+		RID sdf_buffer_write_fb;
+		RID sdf_buffer_process[2];
+		RID sdf_buffer_read;
+		RID sdf_buffer_process_uniform_sets[2];
+		RS::ViewportSDFOversize sdf_oversize = RS::VIEWPORT_SDF_OVERSIZE_120_PERCENT;
+		RS::ViewportSDFScale sdf_scale = RS::VIEWPORT_SDF_SCALE_50_PERCENT;
+		Size2i process_size;
+
 		//texture generated for this owner (nor RD).
 		RID texture;
 		bool was_used;
@@ -1011,11 +1022,38 @@ private:
 		Color clear_color;
 	};
 
-	RID_Owner<RenderTarget> render_target_owner;
+	mutable RID_Owner<RenderTarget> render_target_owner;
 
 	void _clear_render_target(RenderTarget *rt);
 	void _update_render_target(RenderTarget *rt);
 	void _create_render_target_backbuffer(RenderTarget *rt);
+	void _render_target_allocate_sdf(RenderTarget *rt);
+	void _render_target_clear_sdf(RenderTarget *rt);
+	Rect2i _render_target_get_sdf_rect(const RenderTarget *rt) const;
+
+	struct RenderTargetSDF {
+		enum {
+			SHADER_LOAD,
+			SHADER_LOAD_SHRINK,
+			SHADER_PROCESS,
+			SHADER_PROCESS_OPTIMIZED,
+			SHADER_STORE,
+			SHADER_STORE_SHRINK,
+			SHADER_MAX
+		};
+
+		struct PushConstant {
+			int32_t size[2];
+			int32_t stride;
+			int32_t shift;
+			int32_t base_size[2];
+			int32_t pad[2];
+		};
+
+		CanvasSdfShaderRD shader;
+		RID shader_version;
+		RID pipelines[SHADER_MAX];
+	} rt_sdf;
 
 	/* GLOBAL SHADER VARIABLES */
 
@@ -1185,7 +1223,7 @@ public:
 	virtual void canvas_texture_set_texture_filter(RID p_canvas_texture, RS::CanvasItemTextureFilter p_filter);
 	virtual void canvas_texture_set_texture_repeat(RID p_canvas_texture, RS::CanvasItemTextureRepeat p_repeat);
 
-	bool canvas_texture_get_unifom_set(RID p_texture, RS::CanvasItemTextureFilter p_base_filter, RS::CanvasItemTextureRepeat p_base_repeat, RID p_base_shader, int p_base_set, RID &r_uniform_set, Size2i &r_size, Color &r_specular_shininess, bool &r_use_normal, bool &r_use_specular);
+	bool canvas_texture_get_uniform_set(RID p_texture, RS::CanvasItemTextureFilter p_base_filter, RS::CanvasItemTextureRepeat p_base_repeat, RID p_base_shader, int p_base_set, RID &r_uniform_set, Size2i &r_size, Color &r_specular_shininess, bool &r_use_normal, bool &r_use_specular);
 
 	/* SHADER API */
 
@@ -1928,6 +1966,12 @@ public:
 	virtual Color render_target_get_clear_request_color(RID p_render_target);
 	virtual void render_target_disable_clear_request(RID p_render_target);
 	virtual void render_target_do_clear_request(RID p_render_target);
+
+	virtual void render_target_set_sdf_size_and_scale(RID p_render_target, RS::ViewportSDFOversize p_size, RS::ViewportSDFScale p_scale);
+	RID render_target_get_sdf_texture(RID p_render_target);
+	RID render_target_get_sdf_framebuffer(RID p_render_target);
+	void render_target_sdf_process(RID p_render_target);
+	virtual Rect2i render_target_get_sdf_rect(RID p_render_target) const;
 
 	Size2 render_target_get_size(RID p_render_target);
 	RID render_target_get_rd_framebuffer(RID p_render_target);

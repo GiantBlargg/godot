@@ -158,6 +158,48 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	return result;
 }
 
+static bool _is_exact_type(const PropertyInfo &p_par_type, const GDScriptDataType &p_arg_type) {
+	if (!p_arg_type.has_type) {
+		return false;
+	}
+	if (p_par_type.type == Variant::NIL) {
+		return false;
+	}
+	if (p_par_type.type == Variant::OBJECT) {
+		if (p_arg_type.kind == GDScriptDataType::BUILTIN) {
+			return false;
+		}
+		StringName class_name;
+		if (p_arg_type.kind == GDScriptDataType::NATIVE) {
+			class_name = p_arg_type.native_type;
+		} else {
+			class_name = p_arg_type.native_type == StringName() ? p_arg_type.script_type->get_instance_base_type() : p_arg_type.native_type;
+		}
+		return p_par_type.class_name == class_name || ClassDB::is_parent_class(class_name, p_par_type.class_name);
+	} else {
+		if (p_arg_type.kind != GDScriptDataType::BUILTIN) {
+			return false;
+		}
+		return p_par_type.type == p_arg_type.builtin_type;
+	}
+}
+
+static bool _have_exact_arguments(const MethodBind *p_method, const Vector<GDScriptCodeGenerator::Address> &p_arguments) {
+	if (p_method->get_argument_count() != p_arguments.size()) {
+		// ptrcall won't work with default arguments.
+		return false;
+	}
+	MethodInfo info;
+	ClassDB::get_method_info(p_method->get_instance_class(), p_method->get_name(), &info);
+	for (int i = 0; i < p_arguments.size(); i++) {
+		const PropertyInfo &prop = info.arguments[i];
+		if (!_is_exact_type(prop, p_arguments[i].type)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root, bool p_initializer, const GDScriptCodeGenerator::Address &p_index_addr) {
 	if (p_expression->is_constant) {
 		return codegen.add_constant(p_expression->reduced_value);
@@ -395,7 +437,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				gen->pop_temporary();
 			}
 
-			return source;
+			return result;
 		} break;
 		case GDScriptParser::Node::CALL: {
 			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
@@ -430,7 +472,20 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				} else {
 					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
 						// Self function call.
-						if ((codegen.function_node && codegen.function_node->is_static) || call->function_name == "new") {
+						if (ClassDB::has_method(codegen.script->native->get_name(), call->function_name)) {
+							// Native method, use faster path.
+							GDScriptCodeGenerator::Address self;
+							self.mode = GDScriptCodeGenerator::Address::SELF;
+							MethodBind *method = ClassDB::get_method(codegen.script->native->get_name(), call->function_name);
+
+							if (_have_exact_arguments(method, arguments)) {
+								// Exact arguments, use ptrcall.
+								gen->write_call_ptrcall(result, self, method, arguments);
+							} else {
+								// Not exact arguments, but still can use method bind call.
+								gen->write_call_method_bind(result, self, method, arguments);
+							}
+						} else if ((codegen.function_node && codegen.function_node->is_static) || call->function_name == "new") {
 							GDScriptCodeGenerator::Address self;
 							self.mode = GDScriptCodeGenerator::Address::CLASS;
 							gen->write_call(result, self, call->function_name, arguments);
@@ -447,6 +502,28 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 							}
 							if (within_await) {
 								gen->write_call_async(result, base, call->function_name, arguments);
+							} else if (base.type.has_type && base.type.kind != GDScriptDataType::BUILTIN) {
+								// Native method, use faster path.
+								StringName class_name;
+								if (base.type.kind == GDScriptDataType::NATIVE) {
+									class_name = base.type.native_type;
+								} else {
+									class_name = base.type.native_type == StringName() ? base.type.script_type->get_instance_base_type() : base.type.native_type;
+								}
+								if (ClassDB::class_exists(class_name) && ClassDB::has_method(class_name, call->function_name)) {
+									MethodBind *method = ClassDB::get_method(class_name, call->function_name);
+									if (_have_exact_arguments(method, arguments)) {
+										// Exact arguments, use ptrcall.
+										gen->write_call_ptrcall(result, base, method, arguments);
+									} else {
+										// Not exact arguments, but still can use method bind call.
+										gen->write_call_method_bind(result, base, method, arguments);
+									}
+								} else {
+									gen->write_call(result, base, call->function_name, arguments);
+								}
+							} else if (base.type.has_type && base.type.kind == GDScriptDataType::BUILTIN) {
+								gen->write_call_builtin_type(result, base, base.type.builtin_type, call->function_name, arguments);
 							} else {
 								gen->write_call(result, base, call->function_name, arguments);
 							}
@@ -493,7 +570,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(get_node->get_datatype()));
 
 			MethodBind *get_node_method = ClassDB::get_method("Node", "get_node");
-			gen->write_call_method_bind(result, GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF), get_node_method, args);
+			gen->write_call_ptrcall(result, GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF), get_node_method, args);
 
 			return result;
 		} break;
@@ -600,7 +677,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				return GDScriptCodeGenerator::Address();
 			}
 
-			gen->write_operator(result, unary->variant_op, operand, GDScriptCodeGenerator::Address());
+			gen->write_unary_operator(result, unary->variant_op, operand);
 
 			if (operand.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 				gen->pop_temporary();
@@ -668,7 +745,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					GDScriptCodeGenerator::Address left_operand = _parse_expression(codegen, r_error, binary->left_operand);
 					GDScriptCodeGenerator::Address right_operand = _parse_expression(codegen, r_error, binary->right_operand);
 
-					gen->write_operator(result, binary->variant_op, left_operand, right_operand);
+					gen->write_binary_operator(result, binary->variant_op, left_operand, right_operand);
 
 					if (right_operand.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 						gen->pop_temporary();
@@ -831,7 +908,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					} else {
 						gen->write_get(value, key, prev_base);
 					}
-					gen->write_operator(value, assignment->variant_op, value, assigned);
+					gen->write_binary_operator(value, assignment->variant_op, value, assigned);
 					if (assigned.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 						gen->pop_temporary();
 					}
@@ -889,7 +966,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (assignment->operation != GDScriptParser::AssignmentNode::OP_NONE) {
 					GDScriptCodeGenerator::Address member = codegen.add_temporary();
 					gen->write_get_member(member, name);
-					gen->write_operator(assigned, assignment->variant_op, member, assigned);
+					gen->write_binary_operator(assigned, assignment->variant_op, member, assigned);
 					gen->pop_temporary();
 				}
 
@@ -939,7 +1016,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (assignment->operation != GDScriptParser::AssignmentNode::OP_NONE) {
 					// Perform operation.
 					op_result = codegen.add_temporary();
-					gen->write_operator(op_result, assignment->variant_op, target, assigned);
+					gen->write_binary_operator(op_result, assignment->variant_op, target, assigned);
 				} else {
 					op_result = assigned;
 					assigned = GDScriptCodeGenerator::Address();
@@ -995,7 +1072,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 
 			// Check type equality.
 			GDScriptCodeGenerator::Address type_equality_addr = codegen.add_temporary(equality_type);
-			codegen.generator->write_operator(type_equality_addr, Variant::OP_EQUAL, p_type_addr, literal_type_addr);
+			codegen.generator->write_binary_operator(type_equality_addr, Variant::OP_EQUAL, p_type_addr, literal_type_addr);
 			codegen.generator->write_and_left_operand(type_equality_addr);
 
 			// Get literal.
@@ -1006,7 +1083,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 
 			// Check value equality.
 			GDScriptCodeGenerator::Address equality_addr = codegen.add_temporary(equality_type);
-			codegen.generator->write_operator(equality_addr, Variant::OP_EQUAL, p_value_addr, literal_addr);
+			codegen.generator->write_binary_operator(equality_addr, Variant::OP_EQUAL, p_value_addr, literal_addr);
 			codegen.generator->write_and_right_operand(equality_addr);
 
 			// AND both together (reuse temporary location).
@@ -1058,11 +1135,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 			codegen.generator->write_call_builtin(result_addr, GDScriptFunctions::TYPE_OF, typeof_args);
 
 			// Check type equality.
-			codegen.generator->write_operator(result_addr, Variant::OP_EQUAL, p_type_addr, result_addr);
+			codegen.generator->write_binary_operator(result_addr, Variant::OP_EQUAL, p_type_addr, result_addr);
 			codegen.generator->write_and_left_operand(result_addr);
 
 			// Check value equality.
-			codegen.generator->write_operator(result_addr, Variant::OP_EQUAL, p_value_addr, expr_addr);
+			codegen.generator->write_binary_operator(result_addr, Variant::OP_EQUAL, p_value_addr, expr_addr);
 			codegen.generator->write_and_right_operand(equality_test_addr);
 
 			// AND both type and value equality.
@@ -1108,7 +1185,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 
 			// Check type equality.
 			GDScriptCodeGenerator::Address result_addr = codegen.add_temporary(temp_type);
-			codegen.generator->write_operator(result_addr, Variant::OP_EQUAL, p_type_addr, array_type_addr);
+			codegen.generator->write_binary_operator(result_addr, Variant::OP_EQUAL, p_type_addr, array_type_addr);
 			codegen.generator->write_and_left_operand(result_addr);
 
 			// Store pattern length in constant map.
@@ -1124,7 +1201,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 			// Test length compatibility.
 			temp_type.builtin_type = Variant::BOOL;
 			GDScriptCodeGenerator::Address length_compat_addr = codegen.add_temporary(temp_type);
-			codegen.generator->write_operator(length_compat_addr, p_pattern->rest_used ? Variant::OP_GREATER_EQUAL : Variant::OP_EQUAL, value_length_addr, array_length_addr);
+			codegen.generator->write_binary_operator(length_compat_addr, p_pattern->rest_used ? Variant::OP_GREATER_EQUAL : Variant::OP_EQUAL, value_length_addr, array_length_addr);
 			codegen.generator->write_and_right_operand(length_compat_addr);
 
 			// AND type and length check.
@@ -1207,7 +1284,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 
 			// Check type equality.
 			GDScriptCodeGenerator::Address result_addr = codegen.add_temporary(temp_type);
-			codegen.generator->write_operator(result_addr, Variant::OP_EQUAL, p_type_addr, dict_type_addr);
+			codegen.generator->write_binary_operator(result_addr, Variant::OP_EQUAL, p_type_addr, dict_type_addr);
 			codegen.generator->write_and_left_operand(result_addr);
 
 			// Store pattern length in constant map.
@@ -1223,7 +1300,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_match_pattern(CodeGen &c
 			// Test length compatibility.
 			temp_type.builtin_type = Variant::BOOL;
 			GDScriptCodeGenerator::Address length_compat_addr = codegen.add_temporary(temp_type);
-			codegen.generator->write_operator(length_compat_addr, p_pattern->rest_used ? Variant::OP_GREATER_EQUAL : Variant::OP_EQUAL, value_length_addr, dict_length_addr);
+			codegen.generator->write_binary_operator(length_compat_addr, p_pattern->rest_used ? Variant::OP_GREATER_EQUAL : Variant::OP_EQUAL, value_length_addr, dict_length_addr);
 			codegen.generator->write_and_right_operand(length_compat_addr);
 
 			// AND type and length check.
@@ -1397,13 +1474,27 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				codegen.start_block();
 
 				// Evaluate the match expression.
+				GDScriptCodeGenerator::Address value_local = codegen.add_local("@match_value", _gdtype_from_datatype(match->test->get_datatype()));
 				GDScriptCodeGenerator::Address value = _parse_expression(codegen, error, match->test);
 				if (error) {
 					return error;
 				}
 
+				// Assign to local.
+				// TODO: This can be improved by passing the target to parse_expression().
+				gen->write_assign(value_local, value);
+
+				if (value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					codegen.generator->pop_temporary();
+				}
+
 				// Then, let's save the type of the value in the stack too, so we can reuse for later comparisons.
-				GDScriptCodeGenerator::Address type = codegen.add_temporary();
+				GDScriptDataType typeof_type;
+				typeof_type.has_type = true;
+				typeof_type.kind = GDScriptDataType::BUILTIN;
+				typeof_type.builtin_type = Variant::INT;
+				GDScriptCodeGenerator::Address type = codegen.add_local("@match_type", typeof_type);
+
 				Vector<GDScriptCodeGenerator::Address> typeof_args;
 				typeof_args.push_back(value);
 				gen->write_call_builtin(type, GDScriptFunctions::TYPE_OF, typeof_args);
@@ -1457,12 +1548,6 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					gen->write_endif();
 				}
 
-				gen->pop_temporary();
-
-				if (value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
-					codegen.generator->pop_temporary();
-				}
-
 				gen->end_match();
 			} break;
 			case GDScriptParser::Node::IF: {
@@ -1500,12 +1585,20 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				codegen.start_block();
 				GDScriptCodeGenerator::Address iterator = codegen.add_local(for_n->variable->name, _gdtype_from_datatype(for_n->variable->get_datatype()));
 
+				gen->start_for(iterator.type, _gdtype_from_datatype(for_n->list->get_datatype()));
+
 				GDScriptCodeGenerator::Address list = _parse_expression(codegen, error, for_n->list);
 				if (error) {
 					return error;
 				}
 
-				gen->write_for(iterator, list);
+				gen->write_for_assignment(iterator, list);
+
+				if (list.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					codegen.generator->pop_temporary();
+				}
+
+				gen->write_for();
 
 				error = _parse_block(codegen, for_n->loop);
 				if (error) {
@@ -1513,10 +1606,6 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				}
 
 				gen->write_endfor();
-
-				if (list.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
-					codegen.generator->pop_temporary();
-				}
 
 				codegen.end_block();
 			} break;
@@ -1963,6 +2052,8 @@ Error GDScriptCompiler::_parse_class_level(GDScript *p_script, const GDScriptPar
 			}
 
 			p_script->member_indices = base->member_indices;
+			native = base->native;
+			p_script->native = native;
 		} break;
 		default: {
 			_set_error("Parser bug: invalid inheritance.", p_class);

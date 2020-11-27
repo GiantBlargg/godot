@@ -30,9 +30,9 @@
 
 #include "register_scene_types.h"
 
-#include "core/class_db.h"
+#include "core/config/project_settings.h"
+#include "core/object/class_db.h"
 #include "core/os/os.h"
-#include "core/project_settings.h"
 #include "scene/2d/animated_sprite_2d.h"
 #include "scene/2d/area_2d.h"
 #include "scene/2d/audio_stream_player_2d.h"
@@ -77,6 +77,7 @@
 #include "scene/animation/tween.h"
 #include "scene/audio/audio_stream_player.h"
 #include "scene/debugger/scene_debugger.h"
+#include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/center_container.h"
@@ -324,6 +325,7 @@ void register_scene_types() {
 	ClassDB::register_class<ColorRect>();
 	ClassDB::register_class<NinePatchRect>();
 	ClassDB::register_class<ReferenceRect>();
+	ClassDB::register_class<AspectRatioContainer>();
 	ClassDB::register_class<TabContainer>();
 	ClassDB::register_class<Tabs>();
 	ClassDB::register_virtual_class<Separator>();

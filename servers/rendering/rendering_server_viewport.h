@@ -31,8 +31,8 @@
 #ifndef VISUALSERVERVIEWPORT_H
 #define VISUALSERVERVIEWPORT_H
 
-#include "core/rid_owner.h"
-#include "core/self_list.h"
+#include "core/templates/rid_owner.h"
+#include "core/templates/self_list.h"
 #include "rasterizer.h"
 #include "servers/rendering_server.h"
 #include "servers/xr/xr_interface.h"
@@ -81,6 +81,8 @@ public:
 
 		RID shadow_atlas;
 		int shadow_atlas_size;
+
+		bool sdf_active;
 
 		uint64_t last_pass = 0;
 
@@ -146,6 +148,7 @@ public:
 				render_info[i] = 0;
 			}
 			use_xr = false;
+			sdf_active = false;
 
 			time_cpu_begin = 0;
 			time_cpu_end = 0;
@@ -231,6 +234,8 @@ public:
 
 	void viewport_set_default_canvas_item_texture_filter(RID p_viewport, RS::CanvasItemTextureFilter p_filter);
 	void viewport_set_default_canvas_item_texture_repeat(RID p_viewport, RS::CanvasItemTextureRepeat p_repeat);
+
+	void viewport_set_sdf_oversize_and_scale(RID p_viewport, RS::ViewportSDFOversize p_over_size, RS::ViewportSDFScale p_scale);
 
 	void handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time);
 
